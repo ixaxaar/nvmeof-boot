@@ -140,7 +140,7 @@ ln -s "$CFG/subsystems/$NQN" "$CFG/ports/1/subsystems/$NQN"
 
 **Approach: a custom dracut module `90rdma-localboot`.** We deliberately do **not** rely on dracut's built-in `nvmf` autoconnect — its RDMA path is less battle-tested than TCP/FC, and the copy+pivot is custom anyway. We own the logic end to end.
 
-`rdma-localboot.sh` runs as a **`pre-mount` hook** and does, in strict order, emitting a phase timestamp before each step (see Measurement):
+`rdma-localboot.sh` runs as an **`initqueue` hook** (see decision #11 — originally spec'd as `pre-mount`, but dracut's root-device wait happens *before* pre-mount, which deadlocks: our hook is what creates the device). It is idempotent (re-sourced each initqueue loop) and does, in strict order, emitting a phase timestamp before each step (see Measurement):
 
 ```sh
 # 0. entry marker
@@ -177,7 +177,7 @@ echo "$(local_root_partition "$LOCAL")" > /tmp/rdmalocalboot.root
 mark root_ready
 ```
 
-**Pivot integration:** simplest robust path — set `root=/dev/disk/by-id/…local…-part2` (resolved) on the cmdline, and make the hook **block in `pre-mount` until the local root partition exists and fsck-clean**. dracut then performs the mount + `switch_root` itself. Do **not** hand-roll `switch_root` unless the dracut integration fights you; if it does, fall back to a fully manual `mount /sysroot; exec switch_root /sysroot /sbin/init` inside the hook and document why.
+**Pivot integration:** simplest robust path — set `root=/dev/disk/by-id/…local…-part1` (resolved) on the cmdline; our `initqueue` hook returns only after the local root partition exists (dracut's finished check then passes). dracut performs the mount + `switch_root` itself. Do **not** hand-roll `switch_root` unless the dracut integration fights you; if it does, fall back to a fully manual `mount /sysroot; exec switch_root /sysroot /sbin/init` inside the hook and document why.
 
 Before disconnecting: `nvme disconnect -n "$NQN"` after the copy (the remote NS is no longer needed once local is populated). Do this or the fabric session leaks into the booted system.
 
@@ -302,12 +302,14 @@ Recorded so the next agent doesn't re-derive them:
 2. **Payload layout**: single GPT partition (p1), not p2 — the hook resolves partitions dynamically, so the doc's `-part2` example became `-part1`. Payload userspace = busybox + ldd closure, `/sbin/init` shell script; no kernel modules needed in the payload (all drivers it needs were loaded by the initramfs and persist across `switch_root`).
 3. **Networking**: dedicated `rdb-br0` (host 10.210.0.254/24) + `rdb-tap0/1`, static IPs (target .1, client .2). No NAT/forwarding/sysctls//etc writes; subnet-collision check before creating anything. Client cmdline `ip=` supports `static`, `dhcp` (dies with a clear message pre-stage-3), and explicit `<ip>::<gw>:<mask>::<dev>`.
 4. **Device selectors**: local disk via qemu `-device nvme,serial=NVMELOCAL0` → `/dev/disk/by-id/nvme-QEMU_NVMe_Ctrl_NVMELOCAL0` (resolved by glob, partitions excluded); remote namespace via `/sys/class/nvme-fabrics/ctl/*/subsysnqn` match → `/dev/nvmeXn1`. Never by index (rule #4).
-5. **Pivot integration**: dracut does mount+`switch_root` of the cmdline `root=`; the hook blocks in pre-mount until the device exists. State from cmdline hook → pre-mount hook travels via a file (`/tmp/rdb-localboot.env`), not exported vars — under systemd initramfs each hook is a separate process. Manual-`switch_root` fallback documented in README.
-6. **Serial handling**: qemu chardev socket/stdio with `logfile=` — full console transcript always captured per run; `qemu/serial-expect.py` (stdlib) pre-scans the logfile then waits on the live stream. Payload prints BOOT-PROOF; gates never rely on timing.
-7. **Stage 2.5**: LUKS2-in-image (see its section). Key baked into initramfs = documented POC tradeoff.
-8. **gate-1** is a build-sanity gate (lsinitrd contents) between target bring-up and full boot; **gate-3** is a stub exiting 77 until stage 3 exists.
-9. **Git**: repo initialized on branch `master`; commit at each gate per ground rule #1.
-10. **Safety model**: the implementing agent changed nothing on the host. `bootstrap.sh` (user-run) is the only host-changing script and only installs packages. Everything else is runtime-only, `rdb-*`-namespaced, and torn down by `make net-down` / `make target-down` / gate traps.
+5. **Pivot integration**: dracut does mount+`switch_root` of the cmdline `root=`; the hook returns only when the device exists. State from cmdline hook → work hook travels via a file (`/tmp/rdb-localboot.env`), not exported vars — under systemd initramfs each hook is a separate process. Manual-`switch_root` fallback documented in README.
+6. **Hook phase is `initqueue`, not `pre-mount`** (spec §2 updated): dracut's root-device wait runs in `dracut-initqueue` *before* pre-mount hooks, so a pre-mount hook that *creates* the root device deadlocks (observed: `devexists-…NVMELOCAL0-part1` waited 3 min → emergency shell). initqueue hooks are sourced in a loop until finished checks pass — our hook does its full pass once, guarded by `/tmp/rdb.done`. This is also where dracut's own nvmf module hooks.
+7. **Generic-image decontamination** (dracut 111, observed): even without `-H`, dracut bakes host state into the image — `etc/cmdline.d/20-root-dev.conf` (host's `root=UUID=…`) and build-time `wait_for_dev` hooks for host devices (host's ESP `FE64-EE3F` showed up as an initqueue wait!). Client build uses `--no-hostonly-cmdline --no-hostonly-default-device` and `--omit " zfs nvmf "` (nvmf autoconnect is explicitly unused per spec §2).
+8. **Serial handling**: qemu chardev socket/stdio with `logfile=` — full console transcript always captured per run; `qemu/serial-expect.py` (stdlib) pre-scans the logfile then waits on the live stream. Payload prints BOOT-PROOF; gates never rely on timing.
+9. **Stage 2.5**: LUKS2-in-image (see its section). Key baked into initramfs = documented POC tradeoff.
+10. **gate-1** is a build-sanity gate (lsinitrd contents) between target bring-up and full boot; **gate-3** is a stub exiting 77 until stage 3 exists.
+11. **Git**: repo initialized on branch `master`; commit at each gate per ground rule #1.
+12. **Safety model**: the implementing agent changed nothing on the host. `bootstrap.sh` (user-run) is the only host-changing script and only installs packages. Everything else is runtime-only, `rdb-*`-namespaced, and torn down by `make net-down` / `make target-down` / gate traps.
 
 ---
 

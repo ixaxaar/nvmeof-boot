@@ -78,8 +78,8 @@ QEMU_ARGS=(
     -device "virtio-net-pci,netdev=n0,mac=$CLIENT_MAC"
     -drive "file=$LOCAL_IMG,if=none,id=localnvme0,format=raw,cache=none"
     -device "nvme,drive=localnvme0,serial=$LOCAL_NVME_SERIAL"
-    -object "rng-random,filename=/dev/urandom"
-    -device virtio-rng-pci
+    -object "rng-random,id=rng0,filename=/dev/urandom"
+    -device "virtio-rng-pci,rng=rng0"
     -display none -vga none
     -monitor "unix:$STATE_DIR/client.mon,server,nowait"
     -pidfile "$PIDFILE"

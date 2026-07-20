@@ -30,6 +30,8 @@ sudo dracutbasedir="$DRACUT_BASE" \
     RDB_LUKS_KEYFILE="$RDB_LUKS_KEYFILE" \
     RDB_LUKS_KEYFILE_INITRD="$RDB_LUKS_KEYFILE_INITRD" \
     dracut --force --kver "$KVER" \
+    --no-hostonly-cmdline --no-hostonly-default-device \
+    --omit " zfs nvmf " \
     --add " rdma-localboot " \
     --add-drivers " $drivers " \
     "$CLIENT_INITRAMFS"

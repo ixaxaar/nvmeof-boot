@@ -33,6 +33,10 @@ install() {
     fi
 
     inst_hook cmdline   50 "$moddir/parse-rdma-localboot.sh"
-    inst_hook pre-mount 90 "$moddir/rdma-localboot.sh"
+    # initqueue, NOT pre-mount: dracut waits for the root device in
+    # dracut-initqueue BEFORE pre-mount hooks run — but our hook is what
+    # creates that device. initqueue hooks are sourced in a loop until the
+    # finished checks pass; our hook is idempotent (see /tmp/rdb.done guard).
+    inst_hook initqueue 90 "$moddir/rdma-localboot.sh"
     inst_simple "$moddir/../../../../env.sh" /etc/rdmaboot/env.sh
 }

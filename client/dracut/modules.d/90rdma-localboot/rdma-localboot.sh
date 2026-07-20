@@ -12,6 +12,10 @@
 . /etc/rdmaboot/env.sh
 [ -f /tmp/rdb-localboot.env ] && . /tmp/rdb-localboot.env
 
+# initqueue hooks are sourced in a loop until the root device appears —
+# after our first full pass the device exists, so no-op on re-entry.
+[ -f /tmp/rdb.done ] && return 0
+
 # cmdline overrides (RDB_*) over env.sh defaults
 DEV="${RDB_DEV:-$CLIENT_NETDEV}"
 TGT="${RDB_TARGET:-$TARGET_IP}"
@@ -200,4 +204,8 @@ echo "$ROOTDEV" > /tmp/rdmalocalboot.root
 echo "rdma-localboot: local root ready at $ROOTDEV (dracut mounts root= next)" > /dev/console
 mark root_ready
 
-# hook returns → dracut mounts root= (cmdline) and switch_roots for us
+touch /tmp/rdb.done
+return 0
+
+# hook returns → dracut-initqueue's finished check sees the root device →
+# dracut mounts root= (cmdline) and switch_roots for us

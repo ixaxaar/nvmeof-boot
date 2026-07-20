@@ -43,6 +43,12 @@ fi
     || die "target never became ready"
 
 # --- boot the client for a full pivot ---------------------------------------
+# kill any stale client VM from a previous (failed) run
+if [ -f "$STATE_DIR/client.pid" ] && kill -0 "$(cat "$STATE_DIR/client.pid")" 2>/dev/null; then
+    warn "killing stale client VM (pid $(cat "$STATE_DIR/client.pid"))"
+    kill "$(cat "$STATE_DIR/client.pid")" 2>/dev/null || true
+    sleep 1
+fi
 rm -f "$LOCAL_IMG"   # pristine empty local disk every run
 UUID="$(cat "$BOOT_PROOF_FILE")"
 log "booting client; expecting BOOT-PROOF $UUID"
