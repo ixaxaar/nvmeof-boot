@@ -18,7 +18,11 @@ SUDO=""
 
 log "setting up nvmet target: nqn=$NQN dev=$TARGET_BACKING_DEV ${TARGET_IP}:${NVME_PORT}"
 
-$SUDO modprobe nvmet nvmet-rdma rdma_rxe 2>/dev/null || $SUDO modprobe nvmet nvmet_rdma rdma_rxe
+# one modprobe per module: busybox modprobe (and kmod --show-depends) treat
+# extra arguments as module PARAMETERS, not more modules
+for m in nvmet nvmet_rdma rdma_rxe; do
+    $SUDO modprobe "$m"
+done
 
 # soft-RoCE link (no-op if a real RNIC is present; real hardware swap-in point)
 if ! $SUDO rdma link show | grep -v "link rxe" | grep -q .; then

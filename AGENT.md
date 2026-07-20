@@ -61,12 +61,10 @@ nvme-boot/
 ├── .gitignore
 ├── target/
 │   ├── build-rootfs.sh           # payload rootfs.img (plain ext4) / rootfs-crypt.img (LUKS, CRYPT=1)
-│   ├── build-initramfs.sh        # target VM's initramfs OS (dracut + 90nvmet-target)
+│   ├── build-initramfs.sh        # target VM's initramfs OS — HAND-ROLLED cpio (see decisions log)
 │   ├── setup-target.sh           # nvmet configfs bring-up (idempotent; runs inside target VM)
 │   ├── teardown-target.sh
-│   └── dracut/modules.d/90nvmet-target/
-│       ├── module-setup.sh       # modules + tools + replaces /init
-│       └── target-init.sh        # /init: net up → setup-target.sh → TARGET-READY → idle
+│   └── target-init.sh            # /init of the target VM: net up → setup-target.sh → TARGET-READY → idle
 ├── client/
 │   ├── build-initramfs.sh        # dracut invocation (CRYPT=1 bakes in the LUKS key)
 │   ├── kernel-cmdline.txt        # canonical cmdline (documented per-arg, @VARS@ rendered)
@@ -300,7 +298,7 @@ Reference host this repo was built on:
 
 Recorded so the next agent doesn't re-derive them:
 
-1. **Target VM is an initramfs OS**, not a disk image: dracut-built initramfs (host kernel) whose `90nvmet-target` module replaces `/init` — brings up eth0 (static 10.210.0.1), runs `setup-target.sh`, prints `TARGET-READY`, idles. `setup-target.sh`/`teardown-target.sh` remain generic and host-runnable. No udev runs in the target VM: kernel names (eth0, /dev/vda) hold. Fallback if dracut fights the `/init` replacement: hand-rolled cpio initramfs.
+1. **Target VM is an initramfs OS**, not a disk image. ORIGINAL plan was a dracut module replacing `/init` — that lost against dracut 111's systemd initramfs (module ordering gives 98dracut-systemd/99base the final word on `/init`), so the documented fallback was exercised: `target/build-initramfs.sh` hand-rolls a cpio (bash + busybox + ip/rdma/nvme/ethtool with ldd closures + dep-closure of nvmet_rdma/rdma_rxe/virtio_net decompressed to plain .ko + our scripts). Runs unprivileged; gate-1 verifies contents. `setup-target.sh`/`teardown-target.sh` remain generic and host-runnable. No udev in the target VM: kernel names (eth0, /dev/vda) hold. Lessons baked in: initramfs boots must mount devtmpfs themselves; busybox/kmod modprobe takes ONE module per call; ldd output is tab-indented and the ELF interpreter line has no `=>`.
 2. **Payload layout**: single GPT partition (p1), not p2 — the hook resolves partitions dynamically, so the doc's `-part2` example became `-part1`. Payload userspace = busybox + ldd closure, `/sbin/init` shell script; no kernel modules needed in the payload (all drivers it needs were loaded by the initramfs and persist across `switch_root`).
 3. **Networking**: dedicated `rdb-br0` (host 10.210.0.254/24) + `rdb-tap0/1`, static IPs (target .1, client .2). No NAT/forwarding/sysctls//etc writes; subnet-collision check before creating anything. Client cmdline `ip=` supports `static`, `dhcp` (dies with a clear message pre-stage-3), and explicit `<ip>::<gw>:<mask>::<dev>`.
 4. **Device selectors**: local disk via qemu `-device nvme,serial=NVMELOCAL0` → `/dev/disk/by-id/nvme-QEMU_NVMe_Ctrl_NVMELOCAL0` (resolved by glob, partitions excluded); remote namespace via `/sys/class/nvme-fabrics/ctl/*/subsysnqn` match → `/dev/nvmeXn1`. Never by index (rule #4).

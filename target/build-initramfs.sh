@@ -38,8 +38,10 @@ inst_prog "$(command -v rdma)"    "$INITRD"
 inst_prog "$(command -v nvme)"    "$INITRD"
 inst_prog "$(command -v ethtool)" "$INITRD"
 
-# busybox applet symlinks the scripts use
-for app in sh mount umount mkdir echo cat sleep cut grep tee rmdir ln seq setsid sync; do
+# busybox applet symlinks the scripts (and env.sh) use.
+# NOTE: /usr/bin/env is needed for the scripts' #!/usr/bin/env bash shebang.
+for app in sh mount umount mkdir echo cat sleep cut grep tee rmdir ln seq setsid sync \
+           uname dirname basename modprobe insmod lsmod env id ls dmesg; do
     ln -sfn busybox "$INITRD/usr/bin/$app"
 done
 

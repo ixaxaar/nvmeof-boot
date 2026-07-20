@@ -120,15 +120,25 @@ detect_guest_kernel() {
 # tree, preserving absolute paths. Static binaries (e.g. Manjaro's busybox)
 # are just copied. Used by build-rootfs.sh (payload userspace).
 inst_prog() {
-    local bin="$1" dest="$2" lib libs
+    local bin="$1" dest="$2" lib libs bdir
     [ -x "$bin" ] || die "inst_prog: not executable: $bin"
-    cp --parents -L "$bin" "$dest"
-    # NB: ldd exits 1 for static binaries — keep this set -e/pipefail safe
-    libs="$(ldd "$bin" 2>/dev/null | awk '/=> \//{print $3} /^\//{print $1}' | sort -u || true)"
+    # resolve the DIRECTORY (may be a symlink like /lib64→usr/lib) but keep
+    # the basename (may itself be a needed SONAME symlink name); cp -L
+    # dereferences the file. Avoids cp --parents, which refuses to mkdir
+    # over existing symlinks in $dest.
+    bdir="$(realpath "$(dirname "$bin")")"
+    mkdir -p "$dest$bdir"
+    cp -L "$bin" "$dest$bdir/${bin##*/}"
+    # NB: ldd exits 1 for static binaries — keep this set -e/pipefail safe.
+    # NB: ldd indents with a TAB and the ELF interpreter line has no '=>' —
+    # match any field that is an absolute path (covers both forms).
+    libs="$(ldd "$bin" 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i ~ /^\//) print $i}' | sort -u || true)"
     [ -n "$libs" ] || return 0
     while IFS= read -r lib; do
         if [ -f "$lib" ]; then
-            cp --parents -L "$lib" "$dest"
+            bdir="$(realpath "$(dirname "$lib")")"
+            mkdir -p "$dest$bdir"
+            cp -L "$lib" "$dest$bdir/${lib##*/}"
         fi
     done <<< "$libs"
 }

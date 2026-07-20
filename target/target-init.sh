@@ -9,7 +9,10 @@ export PATH=/usr/bin:/bin:/sbin
 
 mount -t proc     proc     /proc
 mount -t sysfs    sysfs    /sys
-# devtmpfs already mounted by the kernel (CONFIG_DEVTMPFS_MOUNT=y)
+# NOTE: with an initramfs the kernel does NOT automount devtmpfs (that only
+# happens for real-root boots) — mount it ourselves or /dev stays empty
+# (no /dev/vda, no /dev/console).
+mount -t devtmpfs devtmpfs /dev
 mkdir -p /sys/kernel/config
 mount -t configfs configfs /sys/kernel/config
 
