@@ -1,0 +1,34 @@
+# Canonical client kernel cmdline for the two-stage rdma-localboot.
+# One argument per line, documented inline.
+#
+# qemu/run-client.sh renders this file: comment/blank lines are dropped and
+# @VARS@ are substituted from env.sh. Edit env.sh (or export vars), not the
+# rendered result.
+
+console=ttyS0             # serial console: kernel log + BOOTPHASE marks land here
+loglevel=7                # verbose kernel log for bring-up; trim for perf runs
+
+rd.neednet=1              # declare networking required (fully honored from stage 3 on)
+
+rd.rdmalocalboot.target=@TARGET_IP@
+#   NVMe-oF/RDMA target IP
+rd.rdmalocalboot.nqn=@NQN@
+#   subsystem NQN to connect to
+rd.rdmalocalboot.dev=@CLIENT_NETDEV@
+#   client netdev inside the VM
+rd.rdmalocalboot.copymode=@COPY_MODE@
+#   dd (block) | partclone (fs-level, skips free space) — the A/B we measure
+rd.rdmalocalboot.ip=@CLIENT_IP@:::@NETMASK@::@CLIENT_NETDEV@
+#   static: <ip>::<gw>:<mask>::<dev>  (gw empty: on-link target)
+#   or "dhcp" (needs a dhcp client in initramfs — stage 3 material)
+rd.rdmalocalboot.crypt=@CRYPT@
+#   0: plaintext image   1: stage 2.5 — LUKS2 container, unlocked on the client
+rd.rdmalocalboot.safeoffloads=@SAFE_OFFLOADS@
+#   1: ethtool -K tso/gso/gro off before rdma link add (soft-roce over virtio)
+rd.rdmalocalboot.mark=@PHASE_LOG@
+#   phase log path on tmpfs; survives switch_root via dracut's /run move
+
+root=@ROOT_ARG@
+#   resolved LOCAL root: /dev/disk/by-id/nvme-QEMU_NVMe_Ctrl_NVMELOCAL0-part1
+#   (crypt=0) or /dev/mapper/rdbroot (crypt=1). The pre-mount hook blocks
+#   until this device exists, then dracut mounts + switch_roots it.

@@ -1,0 +1,18 @@
+# build artifacts
+*.img
+target/boot-proof.uuid
+target/luks.key
+
+# per-run state: pidfiles, sockets, qemu monitor
+/run/
+
+# measurement artifacts (kept out of git per AGENT.md)
+measure/artifacts/*
+!measure/artifacts/.gitkeep
+
+# editor noise
+*.swp
+*~
+
+# python
+__pycache__/
