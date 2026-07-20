@@ -21,8 +21,15 @@ fi
 
 log "building $CLIENT_INITRAMFS (kver=$KVER, CRYPT=$CRYPT)"
 
-sudo dracut --force --kver "$KVER" \
-    --modules-dir "$CLIENT_DIR/dracut/modules.d" \
+# dracut 111 has no --modules-dir; overlay our module via a symlinked base dir
+DRACUT_BASE="$BUILD_DIR/dracut-client"
+make_dracut_base "$DRACUT_BASE" "$CLIENT_DIR/dracut/modules.d/90rdma-localboot"
+
+sudo dracutbasedir="$DRACUT_BASE" \
+    RDB_CRYPT="$RDB_CRYPT" \
+    RDB_LUKS_KEYFILE="$RDB_LUKS_KEYFILE" \
+    RDB_LUKS_KEYFILE_INITRD="$RDB_LUKS_KEYFILE_INITRD" \
+    dracut --force --kver "$KVER" \
     --add " rdma-localboot " \
     --add-drivers " $drivers " \
     "$CLIENT_INITRAMFS"

@@ -6,6 +6,9 @@ target/luks.key
 # per-run state: pidfiles, sockets, qemu monitor
 /run/
 
+# scratch dracut base dirs
+/build/
+
 # measurement artifacts (kept out of git per AGENT.md)
 measure/artifacts/*
 !measure/artifacts/.gitkeep

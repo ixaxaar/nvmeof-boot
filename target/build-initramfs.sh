@@ -9,9 +9,12 @@ need_cmd dracut
 
 log "building $TARGET_INITRAMFS (kver=$KVER)"
 
+# dracut 111 has no --modules-dir; overlay our module via a symlinked base dir
+DRACUT_BASE="$BUILD_DIR/dracut-target"
+make_dracut_base "$DRACUT_BASE" "$TARGET_DIR/dracut/modules.d/90nvmet-target"
+
 # dracut needs root (device nodes inside the cpio archive)
-sudo dracut --force --kver "$KVER" \
-    --modules-dir "$TARGET_DIR/dracut/modules.d" \
+sudo dracutbasedir="$DRACUT_BASE" dracut --force --kver "$KVER" \
     --add " nvmet-target " \
     --add-drivers " nvmet nvmet_rdma rdma_rxe ib_core rdma_cm virtio_net virtio_blk " \
     "$TARGET_INITRAMFS"

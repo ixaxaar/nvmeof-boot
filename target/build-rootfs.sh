@@ -41,8 +41,9 @@ trap cleanup EXIT
 STAGE="$WORK/rootfs"
 mkdir -p "$STAGE"/{bin,sbin,etc,proc,sys,dev,run,mnt}
 
-# busybox + its shared libs, plus applet symlinks the payload init uses
+# busybox (+ shared libs if dynamic; Manjaro's busybox is static) + applet links
 BB="$(command -v busybox)"
+log "staging busybox userspace ($BB)"
 inst_prog "$BB" "$STAGE"
 mkdir -p "$STAGE/bin"
 cp -L "$BB" "$STAGE/bin/busybox"
@@ -97,6 +98,7 @@ INIT
 chmod +x "$STAGE/sbin/init"
 
 # --- create the image --------------------------------------------------------
+log "writing payload init + BOOT-PROOF; creating $ROOTFS_SIZE sparse image + GPT"
 rm -f "$ROOTFS_IMG"
 qemu-img create -f raw "$ROOTFS_IMG" "$ROOTFS_SIZE" >/dev/null
 sgdisk -Z "$ROOTFS_IMG" >/dev/null
@@ -104,6 +106,7 @@ sgdisk -n 1:0:0 -t 1:8300 -c 1:"$ROOTFS_LABEL" "$ROOTFS_IMG" >/dev/null
 
 LOOP="$(sudo losetup -fP --show "$ROOTFS_IMG")"
 wait_for_block "${LOOP}p1" 50 || die "loop partition ${LOOP}p1 did not appear"
+log "loop device: $LOOP (formatting, CRYPT=$CRYPT)"
 
 MNT="$WORK/mnt"
 mkdir -p "$MNT"
@@ -129,7 +132,7 @@ MOUNTED="$MNT"
 sudo cp -a "$STAGE/." "$MNT/"
 sudo chown -R 0:0 "$MNT"
 
-USED="$(du -sh --apparent-size "$MNT" | cut -f1)"
+USED="$(sudo du -sh --apparent-size "$MNT" 2>/dev/null | cut -f1 || echo '?')"
 log "rootfs content installed (used: $USED of $ROOTFS_SIZE image)"
 
 sudo umount "$MNT";  MOUNTED=""

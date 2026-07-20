@@ -46,6 +46,7 @@ MEASURE_DIR="$ROOT_DIR/measure"
 ARTIFACTS_DIR="$MEASURE_DIR/artifacts"
 GATES_DIR="$ROOT_DIR/gates"
 STATE_DIR="$ROOT_DIR/run"                     # pidfiles/sockets (gitignored)
+BUILD_DIR="$ROOT_DIR/build"                   # scratch (dracut base dirs; gitignored)
 
 ROOTFS_SIZE="${ROOTFS_SIZE:-1G}"              # sparse image apparent size
 ROOTFS_LABEL="${ROOTFS_LABEL:-rdbroot}"
@@ -116,15 +117,41 @@ detect_guest_kernel() {
 }
 
 # Copy a dynamically-linked binary + its shared-library closure into a rootfs
-# tree, preserving absolute paths. Used by build-rootfs.sh (payload userspace).
+# tree, preserving absolute paths. Static binaries (e.g. Manjaro's busybox)
+# are just copied. Used by build-rootfs.sh (payload userspace).
 inst_prog() {
-    local bin="$1" dest="$2" lib
+    local bin="$1" dest="$2" lib libs
     [ -x "$bin" ] || die "inst_prog: not executable: $bin"
     cp --parents -L "$bin" "$dest"
-    ldd "$bin" 2>/dev/null | awk '/=> \//{print $3} /^\//{print $1}' | sort -u |
-        while IFS= read -r lib; do
-            [ -f "$lib" ] && cp --parents -L "$lib" "$dest"
-        done
+    # NB: ldd exits 1 for static binaries — keep this set -e/pipefail safe
+    libs="$(ldd "$bin" 2>/dev/null | awk '/=> \//{print $3} /^\//{print $1}' | sort -u || true)"
+    [ -n "$libs" ] || return 0
+    while IFS= read -r lib; do
+        if [ -f "$lib" ]; then
+            cp --parents -L "$lib" "$dest"
+        fi
+    done <<< "$libs"
+}
+
+# dracut 111 has no --modules-dir: modules resolve only from
+# $dracutbasedir/modules.d — but dracutbasedir itself is honored from the
+# environment. Build a private base dir of symlinks (system dracut + our
+# module(s) overlaid). Nothing outside the repo is touched.
+make_dracut_base() {  # make_dracut_base <destdir> <extra-module-dir>...
+    local dest="$1"; shift
+    local sys=/usr/lib/dracut f
+    [ -d "$sys/modules.d" ] || die "system dracut not found at $sys"
+    rm -rf "$dest"
+    mkdir -p "$dest/modules.d"
+    for f in "$sys"/*; do
+        [ "${f##*/}" = "modules.d" ] || ln -sfn "$f" "$dest/${f##*/}"
+    done
+    for f in "$sys"/modules.d/*; do
+        ln -sfn "$f" "$dest/modules.d/${f##*/}"
+    done
+    for f in "$@"; do
+        ln -sfn "$(realpath "$f")" "$dest/modules.d/${f##*/}"
+    done
 }
 
 # Resolve the remote namespace block device by subsystem NQN via sysfs.

@@ -13,9 +13,11 @@ fail=0
 check_img() {  # check_img <image> <pattern...>
     local img="$1"; shift
     [ -f "$img" ] || { echo "  [MISSING] $img — run: make initramfs"; fail=1; return; }
-    local pat
+    # capture once: piping lsinitrd into `grep -q` under pipefail races on SIGPIPE
+    local contents pat
+    contents="$(lsinitrd "$img")"
     for pat in "$@"; do
-        if lsinitrd "$img" | grep -qE "$pat"; then
+        if grep -qE "$pat" <<< "$contents"; then
             printf '  [ok]      %-40s in %s\n' "$pat" "$(basename "$img")"
         else
             printf '  [MISSING] %-40s in %s\n' "$pat" "$(basename "$img")"
